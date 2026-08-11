@@ -1,0 +1,33 @@
+# vim: expandtab:shiftwidth=4:ft=systemd
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# 
+# 
+# ~chewygumxx/gpg-systemd-socket-override.git
+# ::: :/gpg-systemd-socket-override.service
+# 
+# 
+
+#
+# Adaptive GnuPG socket resolution for custom GNUPGHOME. Resolves hashed socket
+# filepaths before socket initialisation. GNUPGHOME must be declared in advance,
+# most conventionally from: ~/.config/environment.d/*.conf
+#
+# Must be enabled to preceed gpg.
+# Dependent upon PATH executable: gpg-systemd-socket-override
+#
+
+[Unit]
+Description=Executes script to generate GnuPG socket overrides
+ConditionEnvironment=GNUPGHOME
+Before=dirmngr.socket keyboxd.socket gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket gpg-agent-browser.socket
+Wants=dirmngr.socket keyboxd.socket gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket gpg-agent-browser.socket
+
+[Service]
+Type=oneshot
+Environment=SYSTEMD_UNIT=%n
+ExecStart=gpg-systemd-socket-override
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# vim: expandtab:shiftwidth=4
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# 
+# 
+# ~chewygumxx/gpg-systemd-socket-override.git
+# ::: :/gpg-systemd-socket-override
+# 
+# 
+
+#
+# Adaptive GnuPG socket resolution for custom GNUPGHOME. Resolves hashed socket
+# filepaths before socket initialisation. GNUPGHOME must be declared in advance,
+# most conventionally from: ~/.config/environment.d/*.conf
+#
+# Dependent upon gpg-socket pre-initialisation service: gpg-systemd-socket-override.service
+#
+
+set -euo pipefail
+
+__this_file="$(realpath ${BASH_SOURCE[0]})"
+
+log() {
+    printf "%s: [%s] %s\n" "~/${__this_file#${HOME}/}"  "$1" "$2"
+}
+
+
+# ---------------------
+# Validate Environment
+# ---------------------
+
+for cmd in systemctl gpgconf; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        log INFO  "Command found: $cmd"
+    else
+        log FATAL "Command not found: $cmd"
+        exit 127
+    fi
+done
+
+[[ -v SYSTEMD_UNIT ]] && log INFO "Invoked by systemd unit: $SYSTEMD_UNIT"
+
+if [[ -z ${GNUPGHOME:-} ]]; then
+    log FATAL "Execution superfluous, environment variable not set or empty: GNUPGHOME"
+    exit 1
+fi
+
+
+# ----------------------
+# Map Systemd <-> GnuPG 
+# ----------------------
+
+export GNUPGHOME
+if socket_dirs="$(gpgconf --list-dirs)"; then :; else
+    gpgconf_exit=$?
+    log FATAL "Exited non-zero: gpgconf --list-dirs"
+    log FATAL "$socket_dirs"
+    exit $gpgconf_exit
+fi
+
+# Systemd user .socket filename <-> gpg socket filepath
+typeset -A sysufile_gpgpath
+while IFS= read -r line; do
+    key="${line%%:*}"
+    [[ $key == *-socket ]] || continue
+    key="${key%-socket}"
+    [[ "$key" == agent* ]] && key="gpg-$key"
+    if [[ -z "$(systemctl --user show -p FragmentPath --value "$key.socket")" ]]; then
+        log WARN "No corresponding systemd.socket exists: $key"
+        continue
+    fi
+    sysufile_gpgpath["$key"]="${line#*:}"
+done <<< "$socket_dirs"
+
+# ------------------
+# Populate Override
+# ------------------
+
+sysudir="${XDG_CONFIG_HOME:-"$HOME/.config"}/systemd/user"
+
+for sysufile in "${!sysufile_gpgpath[@]}"; do 
+	override="${sysudir}/${sysufile}.socket.d/override.conf"
+	[[ ! -d "${override%/*}" ]] && mkdir -p "${override%/*}" 
+
+	cat > "${override}" <<- EOF
+		# vim: expandtab:shiftwidth=4:ft=systemd
+
+		#
+		#
+		# ~/${override#${HOME}/}
+		#
+		#
+
+		#
+		# Adaptive GnuPG socket resolution for custom GNUPGHOME. Resolves hashed socket
+		# filepaths before socket initialisation. GNUPGHOME must be declared in advance,
+		# most conventionally from: ~/.config/environment.d/*.conf
+		#
+
+
+		# ------------------------------------------------------------------------------
+		# GENERATED FILE, ABANDON HOPE ALL YE WHO EDIT
+		# Populated by executable script: 
+		#     ${__this_file}${SYSTEMD_UNIT:+"
+		# Script executed by systemd user unit:
+		#     ~/${XDG_CONFIG_HOME#${HOME}/}/systemd/user/default.target.wants/${SYSTEMD_UNIT}"}
+		# ------------------------------------------------------------------------------
+
+
+		[Unit]
+		Description=Override default socket path of: ${sysufile}.socket
+		ConditionEnvironment=GNUPGHOME
+
+		[Socket]
+		ListenStream=
+		ListenStream=${sysufile_gpgpath[$sysufile]}
+	EOF
+
+	log INFO "File: ~/${override#${HOME}/}"
+	log INFO "  ┗━━▶ ListenStream=${sysufile_gpgpath[$sysufile]}"
+done
+
+systemctl --user daemon-reload
+
