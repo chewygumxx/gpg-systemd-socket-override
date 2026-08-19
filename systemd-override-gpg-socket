@@ -26,7 +26,7 @@ fi
 log() {
 	printf "%s: [%s] %s\n" "${__this_file//${HOME}/~}"  "$1" "$2"
 }
-trap '$trap_exit' EXIT
+trap 'eval "$trap_exit"' EXIT
 
 if tmperr="$(mktemp ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/${__this_file##*/}_tmperr.XXXXXX"} 2>&1)"; then :; else
 	exit=$?
