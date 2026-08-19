@@ -94,7 +94,7 @@ while IFS= read -r line; do
 		continue
 	fi
 
-	sysufile_gpgpath["$key"]="$(gpgconf --list-dirs "$key")"
+	sysufile_gpgpath["$key"]="$(gpgconf --list-dirs "${line%%:*}")"
 done <<< "$gpgconf_dirs"
 
 
