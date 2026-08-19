@@ -94,8 +94,7 @@ while IFS= read -r line; do
 		continue
 	fi
 
-	gpgpath_raw="${line#*:}"
-	sysufile_gpgpath["$key"]="$(printf '%b' "${gpgpath_raw//%/\\x}")" # Decode %-escaped output
+	sysufile_gpgpath["$key"]="$(gpgconf --list-dirs "$key")"
 done <<< "$gpgconf_dirs"
 
 
