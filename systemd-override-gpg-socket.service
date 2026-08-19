@@ -13,7 +13,7 @@
 # filepaths before socket initialisation. GNUPGHOME must be declared in advance,
 # most conventionally from: ~/.config/environment.d/*.conf
 #
-# Must be enabled to preceed gpg.
+# Must be enabled to precede gpg.
 # Dependent upon PATH executable: systemd-override-gpg-socket
 #
 
