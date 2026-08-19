@@ -14,7 +14,7 @@
 # most conventionally from: ~/.config/environment.d/*.conf
 #
 # Must be enabled to precede gpg.
-# Dependent upon PATH executable: systemd-override-gpg-socket
+# Dependent upon executable: ~/.local/bin/systemd-override-gpg-socket
 #
 
 [Unit]
@@ -26,7 +26,7 @@ Wants=dirmngr.socket keyboxd.socket gpg-agent.socket gpg-agent-ssh.socket gpg-ag
 [Service]
 Type=oneshot
 Environment=SYSTEMD_UNIT=%n
-ExecStart=systemd-override-gpg-socket
+ExecStart=%h/.local/bin/systemd-override-gpg-socket
 RemainAfterExit=yes
 
 [Install]
