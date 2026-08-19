@@ -1,18 +1,3 @@
----
-# vim: expandtab:shiftwidth=2:filetype=markdown:foldlevel=3
-
-# 
-# 
-# ~chewygumxx/systemd-override-gpg-socket.git
-# ::: :/README.md
-# 
-# 
-
-ctime: 2026-08-20
-title: README - Systemd Override Generator for GnuPG Socket Resolution
-tags:  [  ]
----
-
 # Systemd Override Generator for GnuPG Socket Resolution
 
 Reconciles systemd `--user` socket activation with a non-default (XDG-compliant) `GNUPGHOME`, so `dirmngr`, `keyboxd`, and `gpg-agent` (including its `ssh`, `extra`, and `browser` variants) get socket-activated on the paths GnuPG actually expects.
