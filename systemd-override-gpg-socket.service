@@ -3,8 +3,8 @@
 
 # 
 # 
-# ~chewygumxx/gpg-systemd-socket-override.git
-# ::: :/gpg-systemd-socket-override.service
+# ~chewygumxx/systemd-override-gpg-socket.git
+# ::: :/systemd-override-gpg-socket.service
 # 
 # 
 
@@ -14,7 +14,7 @@
 # most conventionally from: ~/.config/environment.d/*.conf
 #
 # Must be enabled to preceed gpg.
-# Dependent upon PATH executable: gpg-systemd-socket-override
+# Dependent upon PATH executable: systemd-override-gpg-socket
 #
 
 [Unit]
@@ -26,7 +26,7 @@ Wants=dirmngr.socket keyboxd.socket gpg-agent.socket gpg-agent-ssh.socket gpg-ag
 [Service]
 Type=oneshot
 Environment=SYSTEMD_UNIT=%n
-ExecStart=gpg-systemd-socket-override
+ExecStart=systemd-override-gpg-socket
 RemainAfterExit=yes
 
 [Install]

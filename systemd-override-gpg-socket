@@ -4,8 +4,8 @@
 
 # 
 # 
-# ~chewygumxx/gpg-systemd-socket-override.git
-# ::: :/gpg-systemd-socket-override
+# ~chewygumxx/systemd-override-gpg-socket.git
+# ::: :/systemd-override-gpg-socket
 # 
 # 
 
@@ -14,15 +14,15 @@
 # filepaths before socket initialisation. GNUPGHOME must be declared in advance,
 # most conventionally from: ~/.config/environment.d/*.conf
 #
-# Dependent upon gpg-socket pre-initialisation service: gpg-systemd-socket-override.service
+# Dependent upon gpg-socket pre-initialisation service: systemd-override-gpg-socket.service
 #
 
 set -euo pipefail
 
-__this_file="$(realpath ${BASH_SOURCE[0]})"
+__this_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
 
 log() {
-    printf "%s: [%s] %s\n" "~/${__this_file#${HOME}/}"  "$1" "$2"
+    printf "%s: [%s] %s\n" "${__this_file//${HOME}/~}"  "$1" "$2"
 }
 
 
@@ -42,7 +42,7 @@ done
 [[ -v SYSTEMD_UNIT ]] && log INFO "Invoked by systemd unit: $SYSTEMD_UNIT"
 
 if [[ -z ${GNUPGHOME:-} ]]; then
-    log FATAL "Execution superfluous, environment variable not set or empty: GNUPGHOME"
+    log FATAL "Execution superfluous, environment variable not set or null: GNUPGHOME"
     exit 1
 fi
 
