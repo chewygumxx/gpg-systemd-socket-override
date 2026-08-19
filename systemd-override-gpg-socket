@@ -41,14 +41,16 @@ trap_exit="${trap_exit} rm -f -- \"$tmperr\";"
 # Validate Environment
 # ---------------------
 
+dependency_fail=0
 for cmd in systemctl gpgconf; do
 	if command -v "$cmd" >/dev/null 2>&1; then
 		log INFO  "Command found: $cmd"
 	else
 		log FATAL "Command not found: $cmd"
-		exit 127
+		dependency_fail=1
 	fi
 done
+(( dependency_fail )) && exit 127
 
 [[ -v SYSTEMD_UNIT ]] && log INFO "Invoked by systemd unit: $SYSTEMD_UNIT"
 
