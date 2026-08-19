@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vim: expandtab:shiftwidth=4
+# vim: noexpandtab:shiftwidth=4:filetype=bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # 
@@ -14,17 +14,28 @@
 # filepaths before socket initialisation. GNUPGHOME must be declared in advance,
 # most conventionally from: ~/.config/environment.d/*.conf
 #
-# Dependent upon gpg-socket pre-initialisation service: systemd-override-gpg-socket.service
+# Invoked by gpg-socket pre-initialisation service: systemd-override-gpg-socket.service
 #
 
-set -euo pipefail
-
-__this_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
+if command -v realpath >/dev/null 2>&1; then
+    __this_file="$(realpath "${BASH_SOURCE[0]}")"
+else
+    __this_file="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
+fi
 
 log() {
     printf "%s: [%s] %s\n" "${__this_file//${HOME}/~}"  "$1" "$2"
 }
+trap '$trap_exit' EXIT
 
+if tmperr="$(mktemp ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/${__this_file##*/}_tmperr.XXXXXX"} 2>&1)"; then :; else
+    exit=$?
+    log FATAL "Failed to create stderr tempfile for ${__this_file##*/}"
+    log FATAL "Exited with code $exit: mktemp ${XDG_RUNTIME_DIR:+\"$XDG_RUNTIME_DIR/${__this_file##*/}_tmperr.XXXXXX\"}"
+    log FATAL "$tmperr"
+    exit $exit
+fi
+trap_exit="${trap_exit} rm -f -- \"$tmperr\";"
 
 # ---------------------
 # Validate Environment
@@ -41,85 +52,194 @@ done
 
 [[ -v SYSTEMD_UNIT ]] && log INFO "Invoked by systemd unit: $SYSTEMD_UNIT"
 
-if [[ -z ${GNUPGHOME:-} ]]; then
+if [[ -z "${GNUPGHOME:-}" ]]; then
     log FATAL "Execution superfluous, environment variable not set or null: GNUPGHOME"
     exit 1
 fi
 
+sysudir="${XDG_CONFIG_HOME:-"$HOME/.config"}/systemd/user"
+if [[ ! -d "$sysudir" ]]; then
+    log FATAL "Failed to resolve systemd user configuration directory at: $sysudir"
+    exit 1
+fi
 
 # ----------------------
 # Map Systemd <-> GnuPG 
 # ----------------------
 
-export GNUPGHOME
-if socket_dirs="$(gpgconf --list-dirs)"; then :; else
-    gpgconf_exit=$?
-    log FATAL "Exited non-zero: gpgconf --list-dirs"
-    log FATAL "$socket_dirs"
-    exit $gpgconf_exit
+if gpgconf_dirs="$(gpgconf --list-dirs 2>"$tmperr")"; then :; else
+    exit=$?
+    log FATAL "Failed to enumerate gpg directories"
+    log FATAL "Exited with code $exit: gpgconf --list-dirs"
+    log FATAL "$tmperr"
+    exit $exit
 fi
 
 # Systemd user .socket filename <-> gpg socket filepath
 typeset -A sysufile_gpgpath
 while IFS= read -r line; do
     key="${line%%:*}"
-    [[ $key == *-socket ]] || continue
+
+    # Filter out non-socket directories
+    [[ $key == *-socket ]] || continue 
+
+    # Translate name: gpg -> systemd
     key="${key%-socket}"
     [[ "$key" == agent* ]] && key="gpg-$key"
+
     if [[ -z "$(systemctl --user show -p FragmentPath --value "$key.socket")" ]]; then
-        log WARN "No corresponding systemd.socket exists: $key"
+        log ERROR "No corresponding systemd.socket exists: $key"
         continue
     fi
     sysufile_gpgpath["$key"]="${line#*:}"
-done <<< "$socket_dirs"
+done <<< "$(printf '%b' "${gpgconf_dirs//%/\\x}")" # Decode %-escaped output
+
 
 # ------------------
 # Populate Override
 # ------------------
 
-sysudir="${XDG_CONFIG_HOME:-"$HOME/.config"}/systemd/user"
-
 for sysufile in "${!sysufile_gpgpath[@]}"; do 
-	override="${sysudir}/${sysufile}.socket.d/override.conf"
+	override="$sysudir/$sysufile.socket.d/90-${__this_file##*/}.conf"
+
+    # Optimisation: Check existence internally before forking a mkdir process
 	[[ ! -d "${override%/*}" ]] && mkdir -p "${override%/*}" 
 
-	cat > "${override}" <<- EOF
-		# vim: expandtab:shiftwidth=4:ft=systemd
+    # Protection against interrupt producing truncated file
+    if tmp="$(mktemp ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/${override##*/}.XXXXXX"} 2>"$tmperr")"; then :; else
+        exit=$?
+        log FATAL "Failed to create tempfile for ${override//${HOME}/~}"
+        log FATAL "Exited with code $exit: mktemp ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/${override##*/}.XXXXXX"}"
+        log FATAL "$tmperr"
+        exit $exit
+    fi
+
+	if cat >"$tmp" 2>"$tmperr" <<-EOF
+		# vim: expandtab:shiftwidth=4:filetype=systemd:
 
 		#
 		#
-		# ~/${override#${HOME}/}
+		# ${override//${HOME}/~}
 		#
 		#
 
 		#
 		# Adaptive GnuPG socket resolution for custom GNUPGHOME. Resolves hashed socket
-		# filepaths before socket initialisation. GNUPGHOME must be declared in advance,
-		# most conventionally from: ~/.config/environment.d/*.conf
+		# filepaths before socket initialisation. GNUPGHOME must be declared in advance.
 		#
 
 
 		# ------------------------------------------------------------------------------
 		# GENERATED FILE, ABANDON HOPE ALL YE WHO EDIT
 		# Populated by executable script: 
-		#     ${__this_file}${SYSTEMD_UNIT:+"
-		# Script executed by systemd user unit:
-		#     ~/${XDG_CONFIG_HOME#${HOME}/}/systemd/user/default.target.wants/${SYSTEMD_UNIT}"}
+		#     ${__this_file//${HOME}/~}${SYSTEMD_UNIT:+
+		# Script executed by systemd unit:
+		#     ${SYSTEMD_UNIT}}
 		# ------------------------------------------------------------------------------
 
 
 		[Unit]
-		Description=Override default socket path of: ${sysufile}.socket
+		Description=Override default socket path of: $sysufile.socket
 		ConditionEnvironment=GNUPGHOME
 
 		[Socket]
 		ListenStream=
 		ListenStream=${sysufile_gpgpath[$sysufile]}
 	EOF
+    then :; else
+        exit=$?
+        log FATAL "Failed to write override tempfile for: $sysufile"
+        log FATAL "Exited with code $exit: cat >\"$tmp\" <<-EOF {{heredoc}} EOF"
+        log FATAL "$tmperr"
+        rm -f -- "$tmp"
+        exit $exit
+    fi
+    
+    if mv -f -- "$tmp" "$override" 2>"$tmperr"; then :; else
+        exit=$?
+        log FATAL "Failed to move written override tempfile to destination for: $sysufile"
+        log FATAL "Exited with code $exit: mv -f -- \"$tmp\" \"$override\""
+        log FATAL "$tmperr"
+        rm -f -- "$tmp"
+        exit $exit
+    fi
 
-	log INFO "File: ~/${override#${HOME}/}"
+	log INFO "File: ${override//${HOME}/~}"
 	log INFO "  ┗━━▶ ListenStream=${sysufile_gpgpath[$sysufile]}"
 done
 
-systemctl --user daemon-reload
 
+# -------------
+# Remove Stale 
+# -------------
+
+if tmpfind="$(mktemp ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/${__this_file##*/}_tmpfind.XXXXXX"} 2>"$tmperr")"; then :; else
+    exit=$?
+    log FATAL "Failed to create tempfile for enumerating generated overrides"
+    log FATAL "Exited with code $exit: mktemp ${XDG_RUNTIME_DIR:+\"$XDG_RUNTIME_DIR/${__this_file##*/}_tmpfind.XXXXXX\"}"
+    log FATAL "$tmperr"
+    exit $exit
+fi
+trap_exit="${trap_exit} rm -f -- \"$tmpfind\";"
+
+if find "$sysudir" -type f -name "90-${__this_file##*/}*" -print0 >"$tmpfind" 2>"$tmperr"; then :; else
+    exit=$?
+    log FATAL "Failed to enumerate generated overrides for stale cleanup"
+    log FATAL "Exited with code $exit: find \"$sysudir\" -type f -name \"90-${__this_file##*/}*\" -print0"
+    log FATAL "$tmperr"
+    exit $exit
+fi
+
+while IFS= read -r -d '' override; do
+    # Filter out desired overrides
+    sysufile=${override%\.socket\.d/*}
+    sysufile=${sysufile##*/}
+    [[ -v "sysufile_gpgpath[$sysufile]" ]] && continue
+
+    if rm -- "$override" 2>"$tmperr"; then :; else 
+        exit=$?
+        log ERROR "Failed to remove stale override: ${override//${HOME}/~}"
+        log ERROR "Exited with code $exit: rm -- \"$override\""
+        log ERROR "$tmperr"
+        continue
+    fi
+
+    log INFO "Removed stale override: ${override//${HOME}/~}"
+
+    override_dir="${override%/*}"
+    if override_dirfiles="$(ls -1 "$override_dir" 2>"$tmperr")"; then :; else
+        exit=$?
+        log ERROR "Failed to enumerate files of directory following stale cleanup: ${override_dir//${HOME}/~}"
+        log ERROR "Exited with code $exit: ls -1 \"$override_dir\""
+        log ERROR "$tmperr"
+        continue
+    fi
+
+    if [[ -n "$override_dirfiles" ]]; then
+        log INFO "Directory of stale override contained other files and hence was preserved."
+        continue
+    fi
+
+    if rmdir -- "$override_dir" 2>"$tmperr"; then :; else
+        exit=$?
+        log ERROR "Failed to remove stale and empty override directory: ${override_dir//${HOME}/~}"
+        log ERROR "Exited with code $exit: rmdir -- \"$override_dir\""
+        log ERROR "$tmperr"
+        continue
+    fi
+
+    log INFO "Removed stale and empty override directory: ${override//${HOME}/~}"
+done <"$tmpfind"
+
+
+# ----------------------------
+# Reload Systemd User Manager
+# ----------------------------
+
+if systemctl --user daemon-reload 2>"$tmperr"; then :; else
+    exit=$?
+    log FATAL "Failed to reload systemd user management configuration with newly generated overrides"
+    log ERROR "Exited with code $exit: systemctl --user daemon-reload"
+    log ERROR "$tmperr"
+    exit $exit
+fi
