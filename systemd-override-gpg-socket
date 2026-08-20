@@ -231,7 +231,7 @@ while IFS= read -r -d '' override; do
 		continue
 	fi
 
-	log INFO "Removed stale and empty override directory: ${override//${HOME}/~}"
+	log INFO "Removed stale and empty override directory: ${override_dir//${HOME}/~}"
 done <"$tmpfind"
 
 
